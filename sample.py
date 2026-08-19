@@ -13,13 +13,12 @@ import torch
 
 # Edit this section.
 COLLECTION = "ITBC"
-PAPER1_CODE_ROOT = Path(
+MODEL_ROOT = Path(
     "/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/"
-    "ddpm_outputs/tabddpm/local_phi/paper1-inference"
+    "ddpm_outputs/tabddpm/local_phi"
 )
-MODEL_DIR = Path(
-    "/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/"
-    "ddpm_outputs/tabddpm/local_phi/"
+PAPER1_CODE_ROOT = MODEL_ROOT / "paper1-inference"
+MODEL_DIR = MODEL_ROOT / (
     "ITBC_TABDDPM_local_phi_cond-side-layer-module-sensor_"
     "t1000_s300000_h4096x4096x4096x4096x4096x4096_dim2048_b4096"
 )
@@ -357,5 +356,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

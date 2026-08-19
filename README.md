@@ -9,7 +9,7 @@ Use the collection-specific TabDDPM models from Paper 1 to generate detector hit
    cd GenBIB-ML
    ```
 
-2. Create the environment 
+2. Create the environment.
 
    ```bash
    conda create -n genbib python=3.9.7 -y
@@ -46,8 +46,9 @@ Use the collection-specific TabDDPM models from Paper 1 to generate detector hit
 
    ```python
    COLLECTION = "ITBC"
-   PAPER1_CODE_ROOT = Path("/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi/paper1-inference")
-   MODEL_DIR = Path("/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi/MODEL_DIRECTORY")
+   MODEL_ROOT = Path("/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi")
+   PAPER1_CODE_ROOT = MODEL_ROOT / "paper1-inference"
+   MODEL_DIR = MODEL_ROOT / "MODEL_DIRECTORY"
    CONDITIONS_FILE = Path("conditions.npy")
    OUTPUT_FILE = Path("generated_samples.npy")
    ```
@@ -60,4 +61,3 @@ Use the collection-specific TabDDPM models from Paper 1 to generate detector hit
    ```
 
    The output columns are `logE, time, r, phi, z, side, layer, module, sensor`.
-
