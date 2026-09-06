@@ -61,3 +61,5 @@ Use the collection-specific TabDDPM models from Paper 1 to generate detector hit
    ```
 
    The output columns are `logE, time, r, phi, z, side, layer, module, sensor`.
+
+Tracker reconstruction instructions are in [`reco/README.md`](reco/README.md).
