@@ -48,9 +48,13 @@ The reconstruction uses the following settings:
    apptainer exec --bind "$PWD:/work/genbib,$INPUT_NPY_DIR:/work/input,$OUTPUT_DIR:/work/output" "$IMAGE" bash -lc 'source /opt/setup_mucoll.sh && cd /work/genbib/mucoll-benchmarks && source setup_config.sh /work/genbib/mucoll-benchmarks MAIA_v0 && python3 /work/genbib/reco/assign_actual_cellid.py --input-dir /work/input --output-dir /work/output/assigned_ID --input-format 9col --geomap-path /work/output/maia_cellid_sensor_geometry.npz && python3 /work/genbib/reco/numpy_to_edm4hep.py --samples-path /work/output/assigned_ID --output-path /work/output/generated_hits.edm4hep.root --num-events 1'
    ```
 
-5. Edit `IMAGE`, `BENCHMARK_DIR`, `INPUT_FILE`, and `OUTPUT_DIR` at the top of `reco/run_reco.sh`, then run it.
+5. Set the four paths and run tracker reconstruction.
 
    ```bash
+   export IMAGE=/path/to/mucoll-sim-ubuntu24_v3.0-amd64.sif
+   export BENCHMARK_DIR="$PWD/mucoll-benchmarks"
+   export INPUT_FILE=/path/to/output/generated_hits.edm4hep.root
+   export OUTPUT_DIR=/path/to/reco_output
    bash reco/run_reco.sh
    ```
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-IMAGE="/path/to/mucoll-sim-ubuntu24_v3.0-amd64.sif"
-BENCHMARK_DIR="/path/to/mucoll-benchmarks"
-INPUT_FILE="/path/to/generated_hits.edm4hep.root"
-OUTPUT_DIR="/path/to/reco_output"
-NUM_EVENTS=1
+IMAGE="${IMAGE:-/path/to/mucoll-sim-ubuntu24_v3.0-amd64.sif}"
+BENCHMARK_DIR="${BENCHMARK_DIR:-/path/to/mucoll-benchmarks}"
+INPUT_FILE="${INPUT_FILE:-/path/to/generated_hits.edm4hep.root}"
+OUTPUT_DIR="${OUTPUT_DIR:-/path/to/reco_output}"
+NUM_EVENTS="${NUM_EVENTS:-1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
