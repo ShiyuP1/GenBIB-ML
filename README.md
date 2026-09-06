@@ -1,6 +1,6 @@
 # GenBIB-ML
 
-Use the collection-specific TabDDPM models from Paper 1 to generate detector hits.
+Use the collection-specific TabDDPM models to generate detector hits.
 
 1. Clone this repository and enter the project directory.
 

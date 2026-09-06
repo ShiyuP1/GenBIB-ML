@@ -1,7 +1,5 @@
 # Tracker reconstruction
 
-This workflow converts the six Paper 1 tracker-hit arrays to EDM4hep and runs MAIA v3 tracker reconstruction.
-
 The reconstruction uses the following settings:
 
 - `IsStrip = False`
@@ -15,7 +13,7 @@ The reconstruction uses the following settings:
    ```bash
    git clone https://github.com/ShiyuP1/GenBIB-ML.git
    cd GenBIB-ML
-   git clone --recurse-submodules https://github.com/MuonColliderSoft/mucoll-benchmarks.git
+   git clone https://github.com/MuonColliderSoft/mucoll-benchmarks.git
    git -C mucoll-benchmarks checkout 298d68ac9466f21387a03727b0a85902984fa394
    git -C mucoll-benchmarks submodule update --init --recursive
    ```

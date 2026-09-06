@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-IMAGE="${IMAGE:-/path/to/mucoll-sim-ubuntu24_v3.0-amd64.sif}"
+IMAGE="${IMAGE:-/oscar/data/mleblan6/mucoll/mucoll-sim-ubuntu24:v3.0.sif}"
 BENCHMARK_DIR="${BENCHMARK_DIR:-/path/to/mucoll-benchmarks}"
 INPUT_FILE="${INPUT_FILE:-/path/to/generated_hits.edm4hep.root}"
 OUTPUT_DIR="${OUTPUT_DIR:-/path/to/reco_output}"
