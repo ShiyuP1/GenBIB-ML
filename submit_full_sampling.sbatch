@@ -12,10 +12,8 @@
 
 set -euo pipefail
 
-# Change only MODEL_ROOT and OUTPUT_DIR when switching between norm1 and norm42.
+# Change only MODEL_ROOT when switching between norm1 and norm42.
 MODEL_ROOT=/oscar/home/speng44/data/mucoll/speng44/bib_gen_mother_muon/new_diffusion_norm1
-OUTPUT_DIR="$MODEL_ROOT/full_samples"
-CONDITIONS_DIR="$MODEL_ROOT/full_conditions"
 
 PAPER1_CODE_ROOT=/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi/paper1-inference
 PYTHON=/oscar/home/speng44/work/venv_paper1_test/bin/python
@@ -34,7 +32,6 @@ COLLECTIONS=(VBC VEC ITBC ITEC OTBC OTEC)
 COLLECTION=${COLLECTIONS[$SLURM_ARRAY_TASK_ID]}
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-mkdir -p "$OUTPUT_DIR"
 
 mapfile -t MODEL_MATCHES < <(
     find "$MODEL_ROOT" -mindepth 1 -maxdepth 1 -type d -name "${COLLECTION}_TABDDPM_*" -print
@@ -48,8 +45,10 @@ then
 fi
 
 MODEL_DIR=${MODEL_MATCHES[0]}
-CONDITIONS_FILE="$CONDITIONS_DIR/${COLLECTION}_conditions.npy"
-OUTPUT_FILE="$OUTPUT_DIR/tabddpm_${COLLECTION}_samples.npy"
+SAMPLE_DIR="$MODEL_DIR/sample"
+CONDITIONS_FILE="$SAMPLE_DIR/full_conditions.npy"
+OUTPUT_FILE="$SAMPLE_DIR/generated_samples_full.npy"
+mkdir -p "$SAMPLE_DIR"
 
 "$PYTHON" "$SCRIPT_DIR/sample.py" \
     --collection "$COLLECTION" \
