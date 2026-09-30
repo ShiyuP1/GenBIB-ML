@@ -1,33 +1,15 @@
-"""Generate Paper 1 TabDDPM samples for one detector collection."""
+"""Generate Paper 1-aligned TabDDPM samples for one tracker collection."""
 
+import argparse
 import gc
 import importlib.util
-import json
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import torch
-
-
-# Edit this section.
-COLLECTION = "ITBC"
-MODEL_ROOT = Path(
-    "/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/"
-    "ddpm_outputs/tabddpm/local_phi"
-)
-PAPER1_CODE_ROOT = MODEL_ROOT / "paper1-inference"
-MODEL_DIR = MODEL_ROOT / (
-    "ITBC_TABDDPM_local_phi_cond-side-layer-module-sensor_"
-    "t1000_s300000_h4096x4096x4096x4096x4096x4096_dim2048_b4096"
-)
-CONDITIONS_FILE = None  # Path("conditions.npy") or None for a 16-row smoke test
-OUTPUT_FILE = Path("generated_samples.npy")
-OVERSAMPLE = 1
-SEED = 8
-MAX_REJECTION_ROUNDS = 10000
-DEVICE = "auto"  # "auto", "cuda", or "cpu"
 
 
 COLLECTIONS = {
@@ -51,6 +33,32 @@ FEATURE_INDICES = {
 }
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Generate one Paper 1-aligned sample per supplied condition row."
+    )
+    parser.add_argument("--collection", required=True, choices=COLLECTIONS)
+    parser.add_argument("--model-dir", required=True, type=Path)
+    parser.add_argument("--paper1-code-root", required=True, type=Path)
+    parser.add_argument("--conditions-file", required=True, type=Path)
+    parser.add_argument("--output-file", required=True, type=Path)
+    parser.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
+    parser.add_argument("--seed", required=True, type=int)
+    parser.add_argument("--max-rejection-rounds", required=True, type=int)
+    parser.add_argument("--d-layers", required=True)
+    parser.add_argument("--dim-t", required=True, type=int)
+    parser.add_argument("--num-timesteps", required=True, type=int)
+    parser.add_argument("--sample-batch-size", required=True, type=int)
+    parser.add_argument(
+        "--normalization",
+        required=True,
+        choices=("quantile", "standard", "minmax"),
+    )
+    parser.add_argument("--scheduler", required=True)
+    parser.add_argument("--oversample", default=1, type=int)
+    return parser.parse_args()
+
+
 def require_file(path, label):
     path = Path(path).expanduser().resolve()
     if not path.is_file():
@@ -63,6 +71,16 @@ def require_directory(path, label):
     if not path.is_dir():
         raise FileNotFoundError(f"Missing {label}: {path}")
     return path
+
+
+def parse_layers(value):
+    try:
+        layers = [int(item.strip()) for item in value.split(",") if item.strip()]
+    except ValueError as error:
+        raise ValueError("--d-layers must be a comma-separated list of integers") from error
+    if not layers or any(width <= 0 for width in layers):
+        raise ValueError("--d-layers must contain positive integers")
+    return layers
 
 
 def load_paper1(paper1_root):
@@ -92,19 +110,15 @@ def load_paper1(paper1_root):
     )
 
 
-def load_conditions(path, system_id, y_lookup):
-    if path is None:
-        conditions4 = y_lookup[: min(16, len(y_lookup))]
-        return np.column_stack(
-            [np.full(len(conditions4), system_id, dtype=np.int64), conditions4]
-        )
-
-    conditions = np.load(require_file(path, "conditions file"))
+def load_conditions(path, system_id, y_lookup, oversample):
+    conditions = np.load(require_file(path, "conditions file"), allow_pickle=False)
     if conditions.ndim != 2 or conditions.shape[1] != 5:
         raise ValueError(
             "Conditions must have shape (N, 5): "
             "system_id, side, layer, module, sensor"
         )
+    if len(conditions) == 0:
+        raise ValueError("Conditions file is empty")
     if not np.all(np.isfinite(conditions)) or not np.all(conditions == np.rint(conditions)):
         raise ValueError("Conditions must contain finite integer values")
 
@@ -113,24 +127,26 @@ def load_conditions(path, system_id, y_lookup):
     if np.any(wrong_system):
         found = np.unique(conditions[wrong_system, 0]).tolist()
         raise ValueError(f"Expected system_id {system_id}; found {found}")
-    return conditions
 
-
-def map_conditions_to_classes(conditions, y_lookup):
-    class_by_condition = {tuple(row): index for index, row in enumerate(y_lookup)}
+    class_by_condition = {tuple(row.tolist()): index for index, row in enumerate(y_lookup)}
     class_ids = np.empty(len(conditions), dtype=np.int64)
     missing = []
-
     for index, row in enumerate(conditions[:, 1:]):
-        key = tuple(row)
-        if key not in class_by_condition:
+        key = tuple(row.tolist())
+        class_id = class_by_condition.get(key)
+        if class_id is None:
             missing.append(conditions[index].tolist())
         else:
-            class_ids[index] = class_by_condition[key]
-
+            class_ids[index] = class_id
     if missing:
         raise ValueError(f"Conditions not present in y_lookup.npy: {missing[:10]}")
-    return class_ids
+
+    if oversample < 1:
+        raise ValueError("--oversample must be at least 1")
+    if oversample > 1:
+        conditions = np.repeat(conditions, oversample, axis=0)
+        class_ids = np.repeat(class_ids, oversample)
+    return conditions, class_ids
 
 
 def build_endcap_z_lookup(
@@ -145,11 +161,15 @@ def build_endcap_z_lookup(
 
     for split in ("train", "val"):
         features = np.load(
-            require_file(dataset_dir / f"X_num_{split}.npy", f"dataset X_num_{split}.npy")
+            require_file(dataset_dir / f"X_num_{split}.npy", f"X_num_{split}.npy"),
+            allow_pickle=False,
         ).astype(np.float32)
         class_ids = np.load(
-            require_file(dataset_dir / f"y_{split}.npy", f"dataset y_{split}.npy")
+            require_file(dataset_dir / f"y_{split}.npy", f"y_{split}.npy"),
+            allow_pickle=False,
         ).astype(np.int64).reshape(-1)
+        if len(features) != len(class_ids):
+            raise ValueError(f"Feature/condition length mismatch in {split} split")
         local_hits = np.column_stack([features, y_lookup[class_ids]]).astype(np.float32)
         reference_parts.append(
             inverse_geometry_transform(
@@ -174,41 +194,60 @@ def build_endcap_z_lookup(
     return z_lookup
 
 
+def save_atomic(path, array):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=f".{path.stem}.",
+            suffix=".npy",
+            dir=path.parent,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            np.save(temporary_file, array)
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+
 def main():
-    if COLLECTION not in COLLECTIONS:
-        raise ValueError(f"COLLECTION must be one of: {', '.join(COLLECTIONS)}")
-    if OVERSAMPLE < 1:
-        raise ValueError("OVERSAMPLE must be at least 1")
-
-    system_id, collection_name = COLLECTIONS[COLLECTION]
-    paper1_root = require_directory(PAPER1_CODE_ROOT, "Paper 1 repository")
-    model_dir = require_directory(MODEL_DIR, "model directory")
+    args = parse_args()
+    system_id, collection_name = COLLECTIONS[args.collection]
+    paper1_root = require_directory(args.paper1_code_root, "Paper 1 repository")
+    model_dir = require_directory(args.model_dir, "model directory")
     model_path = require_file(model_dir / "model.pt", "model.pt")
-    config_path = require_file(model_dir / "run_config.json", "run_config.json")
     lookup_path = require_file(model_dir / "y_lookup.npy", "y_lookup.npy")
-    info_path = require_file(model_dir / "dataset" / "info.json", "dataset/info.json")
+    dataset_dir = require_directory(model_dir / "dataset", "dataset directory")
 
-    with config_path.open(encoding="utf-8") as file:
-        config = json.load(file)
-    with info_path.open(encoding="utf-8") as file:
-        dataset_info = json.load(file)
-
-    if config["BASIS"] != "local_phi" or config["Y_MODE"] != "cond":
-        raise ValueError("This interface requires a local_phi, condition-trained model")
-
-    y_lookup = np.load(lookup_path).astype(np.int64)
+    y_lookup = np.load(lookup_path, allow_pickle=False).astype(np.int64)
     if y_lookup.ndim != 2 or y_lookup.shape[1] != 4:
         raise ValueError(f"Expected y_lookup.npy shape (N, 4); found {y_lookup.shape}")
+    conditions, class_ids = load_conditions(
+        args.conditions_file,
+        system_id,
+        y_lookup,
+        args.oversample,
+    )
 
-    conditions = load_conditions(CONDITIONS_FILE, system_id, y_lookup)
-    class_ids = map_conditions_to_classes(conditions, y_lookup)
-    conditions = np.repeat(conditions, OVERSAMPLE, axis=0)
-    class_ids = np.repeat(class_ids, OVERSAMPLE)
+    train_features = np.load(
+        require_file(dataset_dir / "X_num_train.npy", "X_num_train.npy"),
+        mmap_mode="r",
+        allow_pickle=False,
+    )
+    if train_features.ndim != 2:
+        raise ValueError(f"Expected a 2D training array; found {train_features.shape}")
+    num_features = int(train_features.shape[1])
+    if num_features != 5:
+        raise ValueError(f"Expected five generated features; found {num_features}")
+    del train_features
 
-    if DEVICE == "auto":
+    if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
-        device = torch.device(DEVICE)
+        device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
 
@@ -221,17 +260,17 @@ def main():
     ) = load_paper1(paper1_root)
 
     model_params = {
-        "num_classes": int(config["n_classes"]),
-        "is_y_cond": bool(config["is_y_cond"]),
+        "num_classes": int(len(y_lookup)),
+        "is_y_cond": True,
         "rtdl_params": {
-            "d_layers": [int(value) for value in config["D_LAYERS"].split(",")],
+            "d_layers": parse_layers(args.d_layers),
             "dropout": 0.0,
         },
-        "dim_t": int(config["DIM_T"]),
+        "dim_t": int(args.dim_t),
     }
     transform_config = {
-        "seed": int(config["SEED"]),
-        "normalization": config["NORMALIZATION"],
+        "seed": int(args.seed),
+        "normalization": args.normalization,
         "num_nan_policy": None,
         "cat_nan_policy": None,
         "cat_min_frequency": None,
@@ -239,7 +278,7 @@ def main():
         "y_policy": "default",
     }
 
-    output_path = OUTPUT_FILE.expanduser().resolve()
+    output_path = args.output_file.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     z_lookup = None
     if "Endcap" in collection_name:
@@ -251,25 +290,25 @@ def main():
             build_xy_z_lookup,
         )
 
-    num_features = int(dataset_info["n_num_features"])
     output = np.empty((len(class_ids), num_features + 4), dtype=np.float32)
     unfilled = np.ones(len(class_ids), dtype=bool)
 
     print(f"Collection: {collection_name}")
     print(f"Conditions: {len(class_ids):,}")
+    print(f"Classes: {len(y_lookup):,}")
     print(f"Device: {device}")
 
     with tempfile.TemporaryDirectory(prefix="genbib_tabddpm_", dir=output_path.parent) as work_dir:
         sample_job = {
             "parent_dir": work_dir,
-            "real_data_path": str(model_dir / "dataset"),
-            "batch_size": int(config["SAMPLE_BATCH_SIZE"]),
+            "real_data_path": str(dataset_dir),
+            "batch_size": int(args.sample_batch_size),
             "model_type": "mlp",
             "model_params": model_params,
             "model_path": str(model_path),
-            "num_timesteps": int(config["NUM_TIMESTEPS"]),
+            "num_timesteps": int(args.num_timesteps),
             "gaussian_loss_type": "mse",
-            "scheduler": config["SCHEDULER"],
+            "scheduler": args.scheduler,
             "T_dict": transform_config,
             "num_numerical_features": num_features,
             "disbalance": None,
@@ -277,7 +316,7 @@ def main():
             "change_val": False,
         }
 
-        for round_id in range(MAX_REJECTION_ROUNDS):
+        for round_id in range(args.max_rejection_rounds):
             remaining = np.flatnonzero(unfilled)
             if len(remaining) == 0:
                 break
@@ -291,16 +330,18 @@ def main():
             tabddpm_sample(
                 **sample_job,
                 num_samples=len(remaining),
-                seed=SEED + round_id,
+                seed=args.seed + round_id,
                 y_to_sample=requested_ids,
             )
 
-            generated_features = np.load(Path(work_dir) / "X_num_train.npy").astype(
-                np.float32
-            )
-            returned_ids = np.load(Path(work_dir) / "y_train.npy").astype(
-                np.int64
-            ).reshape(-1)
+            generated_features = np.load(
+                Path(work_dir) / "X_num_train.npy",
+                allow_pickle=False,
+            ).astype(np.float32)
+            returned_ids = np.load(
+                Path(work_dir) / "y_train.npy",
+                allow_pickle=False,
+            ).astype(np.int64).reshape(-1)
             if not np.array_equal(returned_ids, requested_ids):
                 raise RuntimeError("TabDDPM changed the requested condition order")
 
@@ -333,9 +374,18 @@ def main():
                 ),
                 dtype=bool,
             )
+            if mask.shape != (len(remaining),):
+                raise RuntimeError(
+                    f"Material mask returned shape {mask.shape}; expected {(len(remaining),)}"
+                )
             passing_slots = remaining[mask]
             output[passing_slots] = generated_hits[mask]
             unfilled[passing_slots] = False
+            print(
+                f"Round {round_id + 1}: accepted={len(passing_slots):,}, "
+                f"remaining={int(unfilled.sum()):,}",
+                flush=True,
+            )
 
             del generated_features, returned_ids, generated_conditions, generated_hits, mask
             gc.collect()
@@ -346,12 +396,22 @@ def main():
         failed_path = output_path.with_name(f"{output_path.stem}_unfilled_conditions.npy")
         np.save(failed_path, conditions[unfilled])
         raise RuntimeError(
-            f"{unfilled.sum()} conditions remain after {MAX_REJECTION_ROUNDS} rounds; "
+            f"{unfilled.sum()} conditions remain after {args.max_rejection_rounds} rounds; "
             f"saved to {failed_path}"
         )
 
-    np.save(output_path, output)
+    expected_shape = (len(conditions), 9)
+    if output.shape != expected_shape:
+        raise RuntimeError(f"Output shape {output.shape} does not match {expected_shape}")
+    if not np.all(np.isfinite(output)):
+        raise RuntimeError("Output contains non-finite values")
+    output_conditions = np.rint(output[:, 5:9]).astype(np.int64)
+    if not np.array_equal(output_conditions, conditions[:, 1:5]):
+        raise RuntimeError("Output conditions do not match the requested conditions")
+
+    save_atomic(output_path, output)
     print(f"Saved {output.shape} to {output_path}")
+    print("FINAL RESULT: PASS")
 
 
 if __name__ == "__main__":

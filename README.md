@@ -1,65 +1,50 @@
 # GenBIB-ML
 
-Use the collection-specific TabDDPM models to generate detector hits.
+Generate Paper 1-aligned tracker BIB samples and run tracker reconstruction.
 
-1. Clone this repository and enter the project directory.
+## Full sampling on Oscar
 
-   ```bash
-   git clone https://github.com/ShiyuP1/GenBIB-ML.git
-   cd GenBIB-ML
-   ```
+`sample.py` uses the Paper 1 TabDDPM sampler, inverse geometry transform,
+endcap z snapping, and material-map rejection. Its output columns are:
 
-2. Create the environment.
+```text
+logE, time, r, phi, z, side, layer, module, sensor
+```
 
-   ```bash
-   conda create -n genbib python=3.9.7 -y
-   conda activate genbib
-   python -m pip install torch==1.10.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-   python -m pip install -r /oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi/paper1-inference/diffusion/tabddpm_official/requirements.txt
-   python -m pip install matplotlib==3.5.0
-   ```
+Before submission, prepare one Paper 1 condition array per collection:
 
-3. Choose the model directory for the collection you want to sample.
+```text
+full_conditions/VBC_conditions.npy
+full_conditions/VEC_conditions.npy
+full_conditions/ITBC_conditions.npy
+full_conditions/ITEC_conditions.npy
+full_conditions/OTBC_conditions.npy
+full_conditions/OTEC_conditions.npy
+```
 
-   The models are stored in `/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi`.
+Each array has columns `system_id, side, layer, module, sensor`. Repeated rows
+request repeated samples with the same detector condition.
 
-   The collection names are `VBC`, `VEC`, `ITBC`, `ITEC`, `OTBC`, and `OTEC`.
+Set `MODEL_ROOT` and `OUTPUT_DIR` near the top of
+`submit_full_sampling.sbatch`, then submit:
 
-4. Save the conditions as an integer NumPy array with shape `(N, 5)`. The columns are `system_id, side, layer, module, sensor`.
+```bash
+sbatch submit_full_sampling.sbatch
+```
 
-   Collection IDs are `1=VBC`, `2=VEC`, `3=ITBC`, `4=ITEC`, `5=OTBC`, and `6=OTEC`.
+The six outputs are written as:
 
-   ```python
-   import numpy as np
+```text
+tabddpm_VBC_samples.npy
+tabddpm_VEC_samples.npy
+tabddpm_ITBC_samples.npy
+tabddpm_ITEC_samples.npy
+tabddpm_OTBC_samples.npy
+tabddpm_OTEC_samples.npy
+```
 
-   conditions = np.array([
-       [3, 0, 1, 12, 0],
-       [3, 0, 1, 13, 0],
-   ], dtype=np.int64)
-
-   np.save("conditions.npy", conditions)
-   ```
-
-   Each row must be present in the selected model's `y_lookup.npy`. Repeating a row requests another sample with the same condition. Set `CONDITIONS_FILE = None` to test the first 16 entries in `y_lookup.npy`.
-
-5. Edit the variables at the top of `sample.py`. Replace `MODEL_DIRECTORY` with the directory selected in step 3.
-
-   ```python
-   COLLECTION = "ITBC"
-   MODEL_ROOT = Path("/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi")
-   PAPER1_CODE_ROOT = MODEL_ROOT / "paper1-inference"
-   MODEL_DIR = MODEL_ROOT / "MODEL_DIRECTORY"
-   CONDITIONS_FILE = Path("conditions.npy")
-   OUTPUT_FILE = Path("generated_samples.npy")
-   ```
-
-6. Run the sampling script.
-
-   ```bash
-   conda activate genbib
-   python sample.py
-   ```
-
-   The output columns are `logE, time, r, phi, z, side, layer, module, sensor`.
+The same script supports norm1 and norm42 by changing `MODEL_ROOT` and
+`OUTPUT_DIR`. All model and sampling parameters are explicit in the sbatch
+file. The sampler exits with an error instead of saving an incomplete sample.
 
 Tracker reconstruction instructions are in [`reco/README.md`](reco/README.md).
