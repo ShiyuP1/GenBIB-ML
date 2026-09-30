@@ -25,11 +25,14 @@ OTEC_TABDDPM_.../sample/full_conditions.npy
 Each array has columns `system_id, side, layer, module, sensor`. Repeated rows
 request repeated samples with the same detector condition.
 
-Set `MODEL_ROOT` near the top of `submit_full_sampling.sbatch`, then submit:
+Set `PROJECT_ROOT`, `MODEL_ROOT`, and `OUTPUT_NAME` near the top of
+`submit_full_sampling.sbatch`, then submit:
 
 ```bash
 sbatch submit_full_sampling.sbatch
 ```
+
+The Paper 1 interface is expected at `PROJECT_ROOT/paper1interface`.
 
 Each full sample is written inside its model directory:
 
@@ -42,8 +45,11 @@ OTBC_TABDDPM_.../sample/generated_samples_full.npy
 OTEC_TABDDPM_.../sample/generated_samples_full.npy
 ```
 
-The same script supports norm1 and norm42 by changing only `MODEL_ROOT`. All
-model and sampling parameters are explicit in the sbatch file. The sampler
-exits with an error instead of saving an incomplete sample.
+The same script supports norm1 and norm42 by changing `MODEL_ROOT`. All model
+and sampling parameters are explicit in the sbatch file. `OUTPUT_NAME` selects
+the output filename and permits intentional replacement or side-by-side runs.
+After 100 rejection rounds, any conditions that still fail the material mask
+are written to a separate `*_dropped_conditions.npy` file and omitted from the
+generated sample.
 
 Tracker reconstruction instructions are in [`reco/README.md`](reco/README.md).

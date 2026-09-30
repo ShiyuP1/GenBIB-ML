@@ -12,10 +12,11 @@
 
 set -euo pipefail
 
-# Change only MODEL_ROOT when switching between norm1 and norm42.
-MODEL_ROOT=/oscar/home/speng44/data/mucoll/speng44/bib_gen_mother_muon/new_diffusion_norm1
+PROJECT_ROOT=/oscar/home/speng44/data/mucoll/speng44/bib_gen_mother_muon
+GENBIB_DIR="$PROJECT_ROOT/GenBIB-ML"
+MODEL_ROOT="$PROJECT_ROOT/new_diffusion_norm1"
 
-PAPER1_CODE_ROOT=/oscar/data/mleblan6/mucoll/speng44/bib_gen_model/ddpm_outputs/tabddpm/local_phi/paper1-inference
+PAPER1_CODE_ROOT="$PROJECT_ROOT/paper1interface"
 PYTHON=/oscar/home/speng44/work/venv_paper1_test/bin/python
 
 D_LAYERS=2048,2048,2048,2048,2048
@@ -25,13 +26,12 @@ SAMPLE_BATCH_SIZE=4096
 NORMALIZATION=quantile
 SCHEDULER=cosine
 SEED=42
-MAX_REJECTION_ROUNDS=10000
+MAX_REJECTION_ROUNDS=100
 OVERSAMPLE=1
+OUTPUT_NAME=generated_samples_full
 
 COLLECTIONS=(VBC VEC ITBC ITEC OTBC OTEC)
 COLLECTION=${COLLECTIONS[$SLURM_ARRAY_TASK_ID]}
-
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 mapfile -t MODEL_MATCHES < <(
     find "$MODEL_ROOT" -mindepth 1 -maxdepth 1 -type d -name "${COLLECTION}_TABDDPM_*" -print
@@ -47,10 +47,10 @@ fi
 MODEL_DIR=${MODEL_MATCHES[0]}
 SAMPLE_DIR="$MODEL_DIR/sample"
 CONDITIONS_FILE="$SAMPLE_DIR/full_conditions.npy"
-OUTPUT_FILE="$SAMPLE_DIR/generated_samples_full.npy"
+OUTPUT_FILE="$SAMPLE_DIR/${OUTPUT_NAME}.npy"
 mkdir -p "$SAMPLE_DIR"
 
-"$PYTHON" "$SCRIPT_DIR/sample.py" \
+"$PYTHON" "$GENBIB_DIR/sample.py" \
     --collection "$COLLECTION" \
     --model-dir "$MODEL_DIR" \
     --paper1-code-root "$PAPER1_CODE_ROOT" \

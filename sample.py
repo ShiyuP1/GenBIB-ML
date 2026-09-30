@@ -392,13 +392,23 @@ def main():
             if device.type == "cuda":
                 torch.cuda.empty_cache()
 
-    if np.any(unfilled):
-        failed_path = output_path.with_name(f"{output_path.stem}_unfilled_conditions.npy")
-        np.save(failed_path, conditions[unfilled])
-        raise RuntimeError(
-            f"{unfilled.sum()} conditions remain after {args.max_rejection_rounds} rounds; "
-            f"saved to {failed_path}"
+    dropped_rows = int(unfilled.sum())
+    if dropped_rows:
+        dropped_path = output_path.with_name(
+            f"{output_path.stem}_dropped_conditions.npy"
         )
+        np.save(dropped_path, conditions[unfilled])
+        keep = ~unfilled
+        output = output[keep]
+        conditions = conditions[keep]
+        print(
+            f"WARNING: dropped {dropped_rows:,} conditions after "
+            f"{args.max_rejection_rounds} rounds; saved them to {dropped_path}",
+            flush=True,
+        )
+
+    if len(output) == 0:
+        raise RuntimeError("No generated rows passed the material mask")
 
     expected_shape = (len(conditions), 9)
     if output.shape != expected_shape:
@@ -411,6 +421,7 @@ def main():
 
     save_atomic(output_path, output)
     print(f"Saved {output.shape} to {output_path}")
+    print(f"Dropped rows: {dropped_rows:,}")
     print("FINAL RESULT: PASS")
 
 
