@@ -11,19 +11,12 @@ endcap z snapping, and material-map rejection. Its output columns are:
 logE, time, r, phi, z, side, layer, module, sensor
 ```
 
-Before submission, prepare one Paper 1 condition array in each model directory:
-
-```text
-VBC_TABDDPM_.../sample/full_conditions.npy
-VEC_TABDDPM_.../sample/full_conditions.npy
-ITBC_TABDDPM_.../sample/full_conditions.npy
-ITEC_TABDDPM_.../sample/full_conditions.npy
-OTBC_TABDDPM_.../sample/full_conditions.npy
-OTEC_TABDDPM_.../sample/full_conditions.npy
-```
-
-Each array has columns `system_id, side, layer, module, sensor`. Repeated rows
-request repeated samples with the same detector condition.
+By default, `sample.py` reconstructs the complete condition sequence directly
+from each model's `dataset/y_train.npy`, `dataset/y_val.npy`, and
+`y_lookup.npy`. This mirrors the normal Paper 1 train-to-evaluation flow and
+requires no separately prepared condition file. An optional
+`--conditions-file` can still provide an external Paper 1 context array with
+columns `system_id, side, layer, module, sensor`.
 
 Set `PROJECT_ROOT`, `MODEL_ROOT`, and `OUTPUT_NAME` near the top of
 `submit_full_sampling.sbatch`, then submit:

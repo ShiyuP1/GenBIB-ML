@@ -46,7 +46,6 @@ fi
 
 MODEL_DIR=${MODEL_MATCHES[0]}
 SAMPLE_DIR="$MODEL_DIR/sample"
-CONDITIONS_FILE="$SAMPLE_DIR/full_conditions.npy"
 OUTPUT_FILE="$SAMPLE_DIR/${OUTPUT_NAME}.npy"
 mkdir -p "$SAMPLE_DIR"
 
@@ -54,7 +53,6 @@ mkdir -p "$SAMPLE_DIR"
     --collection "$COLLECTION" \
     --model-dir "$MODEL_DIR" \
     --paper1-code-root "$PAPER1_CODE_ROOT" \
-    --conditions-file "$CONDITIONS_FILE" \
     --output-file "$OUTPUT_FILE" \
     --device cuda \
     --seed "$SEED" \

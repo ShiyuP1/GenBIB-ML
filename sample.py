@@ -35,12 +35,20 @@ FEATURE_INDICES = {
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Generate one Paper 1-aligned sample per supplied condition row."
+        description="Generate Paper 1-aligned samples from model dataset conditions."
     )
     parser.add_argument("--collection", required=True, choices=COLLECTIONS)
     parser.add_argument("--model-dir", required=True, type=Path)
     parser.add_argument("--paper1-code-root", required=True, type=Path)
-    parser.add_argument("--conditions-file", required=True, type=Path)
+    parser.add_argument(
+        "--conditions-file",
+        type=Path,
+        help=(
+            "Optional external Paper 1 context array with columns system_id, side, "
+            "layer, module, sensor. By default, conditions are reconstructed from "
+            "dataset/y_train.npy, dataset/y_val.npy, and y_lookup.npy."
+        ),
+    )
     parser.add_argument("--output-file", required=True, type=Path)
     parser.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     parser.add_argument("--seed", required=True, type=int)
@@ -110,7 +118,39 @@ def load_paper1(paper1_root):
     )
 
 
-def load_conditions(path, system_id, y_lookup, oversample):
+def apply_oversample(conditions, class_ids, oversample):
+    if oversample < 1:
+        raise ValueError("--oversample must be at least 1")
+    if oversample > 1:
+        conditions = np.tile(conditions, (oversample, 1))
+        class_ids = np.tile(class_ids, oversample)
+    return conditions, class_ids
+
+
+def load_model_conditions(dataset_dir, system_id, y_lookup, oversample):
+    labels = []
+    for split in ("train", "val"):
+        values = np.load(
+            require_file(dataset_dir / f"y_{split}.npy", f"y_{split}.npy"),
+            allow_pickle=False,
+        ).reshape(-1)
+        if not np.issubdtype(values.dtype, np.integer):
+            raise ValueError(f"y_{split}.npy must contain integer class IDs")
+        labels.append(values.astype(np.int64, copy=False))
+
+    class_ids = np.concatenate(labels)
+    if len(class_ids) == 0:
+        raise ValueError("Model dataset contains no train or validation conditions")
+    if class_ids.min() < 0 or class_ids.max() >= len(y_lookup):
+        raise ValueError("Model dataset contains class IDs outside y_lookup.npy")
+
+    conditions = np.empty((len(class_ids), 5), dtype=np.int64)
+    conditions[:, 0] = system_id
+    conditions[:, 1:] = y_lookup[class_ids]
+    return apply_oversample(conditions, class_ids, oversample)
+
+
+def load_external_conditions(path, system_id, y_lookup, oversample):
     conditions = np.load(require_file(path, "conditions file"), allow_pickle=False)
     if conditions.ndim != 2 or conditions.shape[1] != 5:
         raise ValueError(
@@ -141,12 +181,7 @@ def load_conditions(path, system_id, y_lookup, oversample):
     if missing:
         raise ValueError(f"Conditions not present in y_lookup.npy: {missing[:10]}")
 
-    if oversample < 1:
-        raise ValueError("--oversample must be at least 1")
-    if oversample > 1:
-        conditions = np.repeat(conditions, oversample, axis=0)
-        class_ids = np.repeat(class_ids, oversample)
-    return conditions, class_ids
+    return apply_oversample(conditions, class_ids, oversample)
 
 
 def build_endcap_z_lookup(
@@ -225,12 +260,22 @@ def main():
     y_lookup = np.load(lookup_path, allow_pickle=False).astype(np.int64)
     if y_lookup.ndim != 2 or y_lookup.shape[1] != 4:
         raise ValueError(f"Expected y_lookup.npy shape (N, 4); found {y_lookup.shape}")
-    conditions, class_ids = load_conditions(
-        args.conditions_file,
-        system_id,
-        y_lookup,
-        args.oversample,
-    )
+    if args.conditions_file is None:
+        conditions, class_ids = load_model_conditions(
+            dataset_dir,
+            system_id,
+            y_lookup,
+            args.oversample,
+        )
+        condition_source = "dataset/y_train.npy + dataset/y_val.npy"
+    else:
+        conditions, class_ids = load_external_conditions(
+            args.conditions_file,
+            system_id,
+            y_lookup,
+            args.oversample,
+        )
+        condition_source = str(args.conditions_file.expanduser().resolve())
 
     train_features = np.load(
         require_file(dataset_dir / "X_num_train.npy", "X_num_train.npy"),
@@ -295,6 +340,7 @@ def main():
 
     print(f"Collection: {collection_name}")
     print(f"Conditions: {len(class_ids):,}")
+    print(f"Condition source: {condition_source}")
     print(f"Classes: {len(y_lookup):,}")
     print(f"Device: {device}")
 
