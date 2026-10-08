@@ -41,6 +41,47 @@ def make_digi_alg_list(args):
     return [event_counter_cfg()] + tracker_digi_algs(args)
 
 
+def paper1_track_selection():
+    from Configurables import FilterTracksAlg
+    from Tracking.CKF_tracking import track_refitter_cfg
+
+    def track_filter(
+        name, input_collection, output_collection, min_pt="0.5", min_hits="7"
+    ):
+        return FilterTracksAlg(
+            name,
+            InputTrackCollectionName=[input_collection],
+            MinPt=min_pt,
+            MaxD0=999,
+            MaxZ0=999,
+            NHitsInner="0",
+            NHitsOuter="0",
+            NHitsTotal=min_hits,
+            NHitsVertex="0",
+            OutputTrackCollectionName=[output_collection],
+        )
+
+    refitter = track_refitter_cfg()
+    refitter.InputTrackCollectionName = ["SiTracksPreFit"]
+    refitter.InputRelationCollectionName = []
+    refitter.OutputTrackCollectionName = ["SiTracks_Refitted"]
+    refitter.OutputRelationCollectionName = ["SiTracks_Refitted_Relation"]
+    refitter.Max_Chi2_Incr = 10.0
+    refitter.ReducedChi2Cut = 3.0
+    return [
+        track_filter("Paper1PreFilter", "SiTracks", "SiTracksPreFit"),
+        refitter,
+        # v3 refitted tracks cannot reproduce Paper1's post-fit hit-count cut.
+        track_filter(
+            "Paper1FinalFilter",
+            "SiTracks_Refitted",
+            "SelectedTracks",
+            min_pt="0.5",
+            min_hits="0",
+        ),
+    ]
+
+
 def make_reco_alg_list(args):
     from Common.event_counter import event_counter_cfg
     from Tracking.mergers import mergehits_cfg, mergehitsrelations_cfg
@@ -55,7 +96,7 @@ def make_reco_alg_list(args):
     from Tracking.CKF_tracking import CKFTracker_cfg, deduper_cfg
     deduper = deduper_cfg()
     deduper.OutputTrackCollectionName = ["SiTracks"]
-    algs += [CKFTracker_cfg(args), deduper]
+    algs += [CKFTracker_cfg(args), deduper] + paper1_track_selection()
 
     return algs
 

@@ -7,18 +7,19 @@ import os
 from array import array
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 from scipy.spatial import cKDTree
 
 
 NINE_COL_COLLECTIONS = [
-    ("tabddpm_VBC_samples", "VertexBarrelCollection_SimTrackerHit_conditional_reco9_0", 1),
-    ("tabddpm_VEC_samples", "VertexEndcapCollection_SimTrackerHit_conditional_reco9_0", 2),
-    ("tabddpm_ITBC_samples", "InnerTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0", 3),
-    ("tabddpm_ITEC_samples", "InnerTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0", 4),
-    ("tabddpm_OTBC_samples", "OuterTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0", 5),
-    ("tabddpm_OTEC_samples", "OuterTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0", 6),
+    ("VBC_sample", "VertexBarrelCollection_SimTrackerHit_conditional_reco9_0", 1),
+    ("VEC_sample", "VertexEndcapCollection_SimTrackerHit_conditional_reco9_0", 2),
+    ("ITBC_sample", "InnerTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0", 3),
+    ("ITEC_sample", "InnerTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0", 4),
+    ("OTBC_sample", "OuterTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0", 5),
+    ("OTEC_sample", "OuterTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0", 6),
 ]
 
 WITH_SYSTEM_COLLECTIONS = [
@@ -40,6 +41,7 @@ STATUS_RESCUED = 3
 
 # Numerical tolerance for sensor boundaries and xyz round-trip noise.
 FP_EPS_MM = 1e-6
+CHUNK_ROWS = 5000
 
 
 @dataclass
@@ -509,6 +511,48 @@ def convert_rows(
     return output, counts
 
 
+def convert_in_chunks(
+    rows: np.ndarray,
+    output_path: Path,
+    input_format: str,
+    system_id: int,
+    geom: SensorGeometry,
+    k: int,
+    ref_lookup: ReferenceLookup | None,
+) -> dict[str, int]:
+    totals = dict.fromkeys(
+        ("written_rows", "invalid_rows", "multi_assigned_rows", "rescued_rows", "lookup_rescued_rows"),
+        0,
+    )
+    with TemporaryDirectory(dir=output_path.parent) as tmp_dir:
+        staged_path = Path(tmp_dir) / "rows.npy"
+        staged = np.lib.format.open_memmap(
+            staged_path, mode="w+", dtype=np.float64, shape=(len(rows), 10)
+        )
+        written = 0
+        for start in range(0, len(rows), CHUNK_ROWS):
+            output, counts = convert_rows(
+                rows[start : start + CHUNK_ROWS], input_format, system_id, geom, k, ref_lookup
+            )
+            staged[written : written + len(output)] = output
+            written += len(output)
+            for name, value in counts.items():
+                totals[name] += value
+
+        if written:
+            merged = np.lib.format.open_memmap(
+                output_path, mode="w+", dtype=np.float64, shape=(written, 10)
+            )
+            for start in range(0, written, CHUNK_ROWS):
+                stop = min(start + CHUNK_ROWS, written)
+                merged[start:stop] = staged[start:stop]
+            del merged
+        else:
+            np.save(output_path, np.empty((0, 10), dtype=np.float64))
+        del staged
+    return totals
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", required=True)
@@ -539,15 +583,15 @@ def main() -> int:
         if REF_H5_PATH is not None:
             h5_collection = output_stem.removesuffix("_SimTrackerHit_conditional_reco9_0")
             ref_lookup = load_h5_reference_lookup(REF_H5_PATH, h5_collection)
-        output, counts = convert_rows(
+        counts = convert_in_chunks(
             selected,
+            output_path,
             args.input_format,
             system_id,
             geom,
             args.k,
             ref_lookup,
         )
-        np.save(output_path, output)
 
         summary = {
             "collection": output_stem,
