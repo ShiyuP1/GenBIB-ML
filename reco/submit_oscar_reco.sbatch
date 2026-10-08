@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT=/oscar/home/speng44/data/mucoll/speng44/bib_gen_mother_muon
+PROJECT_ROOT=/oscar/data/mleblan6/mucoll/speng44/bib_gen_mother_muon
 GENBIB_DIR="$PROJECT_ROOT/GenBIB-ML"
 IMAGE=/oscar/home/speng44/data/mucoll/mucoll-sim-ubuntu24:v3.0.sif
 BENCHMARK_DIR="$GENBIB_DIR/mucoll-benchmarks"
