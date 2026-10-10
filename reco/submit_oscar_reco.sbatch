@@ -19,10 +19,19 @@ BENCHMARK_DIR="$GENBIB_DIR/mucoll-benchmarks"
 BENCHMARK_COMMIT=298d68ac9466f21387a03727b0a85902984fa394
 
 INPUT_DIR="${INPUT_DIR:?Set INPUT_DIR to the directory containing the six sample files}"
+INPUT_TYPE="${INPUT_TYPE:-sample}"
 NUM_EVENTS="${NUM_EVENTS:-1}"
 WRITE_FRACTION="${WRITE_FRACTION:-1.0}"
 SAMPLE_MODE="${SAMPLE_MODE:-first}"
 RANDOM_SEED="${RANDOM_SEED:-12345}"
+
+case "$INPUT_TYPE" in
+    sample|data) ;;
+    *)
+        echo "INPUT_TYPE must be sample or data: $INPUT_TYPE" >&2
+        exit 1
+        ;;
+esac
 
 INPUT_DIR="$(readlink -f "$INPUT_DIR")"
 RECO_ROOT="$(dirname "$INPUT_DIR")"
@@ -43,13 +52,14 @@ fi
 
 collections=(VBC VEC ITBC ITEC OTBC OTEC)
 for collection in "${collections[@]}"; do
-    if [[ ! -f "$INPUT_DIR/${collection}_sample.npy" ]]; then
-        echo "Missing required sample: $INPUT_DIR/${collection}_sample.npy" >&2
+    if [[ ! -f "$INPUT_DIR/${collection}_${INPUT_TYPE}.npy" ]]; then
+        echo "Missing required input: $INPUT_DIR/${collection}_${INPUT_TYPE}.npy" >&2
         exit 1
     fi
 done
 
 echo "Input directory:  $INPUT_DIR"
+echo "Input type:       $INPUT_TYPE"
 echo "Reco root:        $RECO_ROOT"
 echo "Events:           $NUM_EVENTS"
 echo "Write fraction:   $WRITE_FRACTION"
@@ -61,4 +71,4 @@ echo "Benchmark commit: $actual_benchmark_commit"
 apptainer exec --bind "$PROJECT_ROOT:$PROJECT_ROOT" --bind "$RECO_ROOT:$RECO_ROOT" "$IMAGE" \
     bash "$GENBIB_DIR/reco/run_reco.sh" \
     "$BENCHMARK_DIR" "$INPUT_DIR" "$RECO_ROOT" "$WRITE_FRACTION" \
-    "$SAMPLE_MODE" "$RANDOM_SEED" "$NUM_EVENTS"
+    "$SAMPLE_MODE" "$RANDOM_SEED" "$NUM_EVENTS" "$INPUT_TYPE"

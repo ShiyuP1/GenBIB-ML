@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-if [ "$#" -ne 7 ]; then
-    echo "Usage: $0 BENCHMARK_DIR INPUT_DIR RECO_ROOT WRITE_FRACTION SAMPLE_MODE RANDOM_SEED NUM_EVENTS" >&2
+if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
+    echo "Usage: $0 BENCHMARK_DIR INPUT_DIR RECO_ROOT WRITE_FRACTION SAMPLE_MODE RANDOM_SEED NUM_EVENTS [INPUT_TYPE]" >&2
     exit 1
 fi
 
@@ -13,6 +13,15 @@ WRITE_FRACTION="$4"
 SAMPLE_MODE="$5"
 RANDOM_SEED="$6"
 NUM_EVENTS="$7"
+INPUT_TYPE="${8:-sample}"
+
+case "$INPUT_TYPE" in
+    sample|data) ;;
+    *)
+        echo "INPUT_TYPE must be sample or data: $INPUT_TYPE" >&2
+        exit 1
+        ;;
+esac
 
 RECO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIGI_DIR="$RECO_ROOT/digi"
@@ -31,9 +40,9 @@ for path in "$BENCHMARK_DIR" "$INPUT_DIR" "$RECO_DIR/tracker_reco_override.py"; 
     fi
 done
 
-for input in "$INPUT_DIR"/{VBC,VEC,ITBC,ITEC,OTBC,OTEC}_sample.npy; do
+for input in "$INPUT_DIR"/{VBC,VEC,ITBC,ITEC,OTBC,OTEC}_"$INPUT_TYPE".npy; do
     if [ ! -f "$input" ]; then
-        echo "Missing required sample: $input" >&2
+        echo "Missing required input: $input" >&2
         exit 1
     fi
 done
@@ -54,19 +63,39 @@ mkdir -p "$ASSIGNED_DIR" "$TRACK_DIR" "$PLOT_DIR"
 source /opt/setup_mucoll.sh
 source <(sed 's/\r$//' "$BENCHMARK_DIR/setup_config.sh") "$BENCHMARK_DIR" MAIA_v0
 
-python3 "$RECO_DIR/assign_actual_cellid.py" \
-    --input-dir "$INPUT_DIR" \
-    --output-dir "$ASSIGNED_DIR" \
-    --input-format 9col \
-    --write-fraction "$WRITE_FRACTION" \
-    --sample-mode "$SAMPLE_MODE" \
-    --random-seed "$RANDOM_SEED" \
-    --geomap-path "$GEOMAP_PATH"
+if [ "$INPUT_TYPE" = sample ]; then
+    python3 "$RECO_DIR/assign_actual_cellid.py" \
+        --input-dir "$INPUT_DIR" \
+        --output-dir "$ASSIGNED_DIR" \
+        --input-format 9col \
+        --write-fraction "$WRITE_FRACTION" \
+        --sample-mode "$SAMPLE_MODE" \
+        --random-seed "$RANDOM_SEED" \
+        --geomap-path "$GEOMAP_PATH"
+    converter_fraction=1.0
+else
+    collections=(VBC VEC ITBC ITEC OTBC OTEC)
+    output_stems=(
+        VertexBarrelCollection_SimTrackerHit_conditional_reco9_0
+        VertexEndcapCollection_SimTrackerHit_conditional_reco9_0
+        InnerTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0
+        InnerTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0
+        OuterTrackerBarrelCollection_SimTrackerHit_conditional_reco9_0
+        OuterTrackerEndcapCollection_SimTrackerHit_conditional_reco9_0
+    )
+    for index in "${!collections[@]}"; do
+        ln -s "$INPUT_DIR/${collections[$index]}_data.npy" "$ASSIGNED_DIR/${output_stems[$index]}.npy"
+    done
+    converter_fraction="$WRITE_FRACTION"
+fi
 
 python3 "$RECO_DIR/numpy_to_edm4hep.py" \
     --samples-path "$ASSIGNED_DIR" \
     --output-path "$EDM4HEP_INPUT" \
-    --num-events "$NUM_EVENTS"
+    --num-events "$NUM_EVENTS" \
+    --write-fraction "$converter_fraction" \
+    --sample-mode "$SAMPLE_MODE" \
+    --random-seed "$RANDOM_SEED"
 
 cd "$DIGI_DIR"
 k4run "$RECO_DIR/tracker_reco_override.py" --stage digi -n "$NUM_EVENTS" \
